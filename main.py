@@ -1,121 +1,72 @@
-from flask import Flask, render_template, request, redirect, session
-import requests
-import json
-import os
-from datetime import date
+from flask import Flask, render_template, request, redirect, url_for
+from replit import db
+from datetime import datetime
 
 app = Flask(__name__)
-app.secret_key = 'your-secret-key'  # Required for session login
 
-DB_FILE = 'database.json'
+# Login credentials
+ADMIN_EMAIL = "admin@example.com"
+ADMIN_PASSWORD = "admin123"
 
-def load_db():
-    if os.path.exists(DB_FILE):
-        with open(DB_FILE, 'r') as f:
-            return json.load(f)
-    else:
-        return {}
-
-def save_db(data):
-    with open(DB_FILE, 'w') as f:
-        json.dump(data, f, indent=2)
-
-# --- Login Page ---
-@app.route('/')
+@app.route('/', methods=['GET', 'POST'])
 def login():
+    if request.method == 'POST':
+        email = request.form.get('email')
+        password = request.form.get('password')
+        if email == ADMIN_EMAIL and password == ADMIN_PASSWORD:
+            return redirect(url_for('dashboard'))
+        return render_template('login.html', error="Invalid credentials")
     return render_template('login.html')
 
-@app.route('/login', methods=['POST'])
-def do_login():
-    email = request.form['email']
-    password = request.form['password']
+@app.route('/dashboard', methods=['GET', 'POST'])
+def dashboard():
+    if request.method == 'POST':
+        # fetch and process form fields
+        client = request.form.get('client')
+        currency = request.form.get('currency').upper()
+        amount = float(request.form.get('amount'))
+        booking_rate = float(request.form.get('booking_rate'))
+        hedge_status = request.form.get('hedge')
+        notes = request.form.get('notes')
+        booking_type = request.form.get('type')
+        date = datetime.now().strftime('%Y-%m-%d')
 
-    if email == 'admin@example.com' and password == 'admin123':
-        session['user'] = email
-        return redirect('/dashboard')
-    else:
-        return render_template('login.html', error='Invalid credentials')
+        try:
+            import requests
+            res = requests.get(f'https://api.exchangerate.host/latest?base={currency}&symbols=INR')
+            live_rate = res.json()['rates']['INR']
+        except:
+            live_rate = 0.0
 
-@app.route('/logout')
-def logout():
-    session.pop('user', None)
-    return redirect('/')
+        mtm = round((live_rate - booking_rate) * amount, 2)
 
-# --- Dashboard Page ---
-@app.route('/dashboard')
-def index():
-    if 'user' not in session:
-        return redirect('/')
-    db = load_db()
-    bookings = list(db.values())
-    return render_template('index.html', bookings=bookings, user=session['user'])
+        data = {
+            "client": client,
+            "currency": currency,
+            "amount": amount,
+            "booking_rate": booking_rate,
+            "live_rate": round(live_rate, 4),
+            "mtm": mtm,
+            "hedge": hedge_status,
+            "type": booking_type,
+            "date": date,
+            "notes": notes
+        }
 
-# --- Add Booking ---
-@app.route('/add', methods=['POST'])
-def add():
-    if 'user' not in session:
-        return redirect('/')
-    client = request.form['client']
-    currency = request.form['currency'].upper()
-    amount = float(request.form['amount'])
-    booking_rate = float(request.form['booking_rate'])
-    hedge_status = request.form['hedge']
-    trade_type = request.form['type']
-    notes = request.form.get('notes', '')
+        db[email_key(client, currency)] = data
+        return redirect(url_for('dashboard'))
 
-    # Get live rate
-    try:
-        api_url = f"https://api.exchangerate.host/latest?base={currency}&symbols=INR"
-        res = requests.get(api_url)
-        live_rate = res.json()['rates']['INR']
-    except Exception as e:
-        print("API error:", e)
-        return "Failed to fetch live rate"
+    bookings = [db[key] for key in db.keys() if db[key]]
+    return render_template('index.html', bookings=bookings)
 
-    mtm = (live_rate - booking_rate) * amount
-    db = load_db()
+@app.route('/reset', methods=['POST'])
+def reset():
+    for key in list(db.keys()):
+        del db[key]
+    return redirect(url_for('dashboard'))
 
-    data = {
-        "client": client,
-        "currency": currency,
-        "amount": amount,
-        "booking_rate": booking_rate,
-        "live_rate": round(live_rate, 4),
-        "mtm": round(mtm, 2),
-        "hedge": hedge_status,
-        "type": trade_type,
-        "date": str(date.today()),
-        "notes": notes
-    }
-
-    key = client + "_" + currency + "_" + str(len(db) + 1)
-    db[key] = data
-    save_db(db)
-    return redirect('/dashboard')
-
-# --- Reset DB (Optional utility) ---
-@app.route('/reset')
-def reset_db():
-    save_db({})
-    return redirect('/dashboard')
-
-# --- Download CSV ---
-@app.route('/download')
-def download():
-    import csv
-    from flask import Response
-    db = load_db()
-    bookings = list(db.values())
-
-    def generate():
-        data = bookings
-        header = data[0].keys() if data else []
-        yield ','.join(header) + '\n'
-        for row in data:
-            yield ','.join(str(row[h]) for h in header) + '\n'
-
-    return Response(generate(), mimetype='text/csv',
-                    headers={'Content-Disposition': 'attachment; filename=fx_bookings.csv'})
+def email_key(client, currency):
+    return f"{client}_{currency}"
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    app.run(debug=True)
