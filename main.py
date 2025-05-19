@@ -1,143 +1,99 @@
-
-from flask import Flask, render_template, request, redirect, Response, session
-import requests
+from flask import Flask, render_template, request, redirect, session
 from datetime import datetime
+import requests
 from replit import db
-from collections import defaultdict
 
 app = Flask(__name__)
-app.secret_key = 'fx-secret-key-123'  # Use a secure random key in production
-
-# --- Static user setup ---
-users = {
-    "admin@example.com": {"password": "admin123", "role": "admin"},
-    "client1@example.com": {"password": "client123", "role": "client"}
-}
+app.secret_key = 'your_secret_key'
 
 @app.route('/', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
-        email = request.form['email']
-        password = request.form['password']
-        user = users.get(email)
-        if user and user['password'] == password:
-            session['email'] = email
-            session['role'] = user['role']
+        email = request.form.get('email')
+        password = request.form.get('password')
+        if email == 'admin@example.com' and password == 'admin':
+            session['user'] = email
             return redirect('/dashboard')
-        return "Invalid credentials"
+        else:
+            return render_template('login.html', error='Invalid credentials')
     return render_template('login.html')
 
-@app.route('/logout')
-def logout():
-    session.clear()
-    return redirect('/')
-
 @app.route('/dashboard')
-def dashboard():
-    if 'email' not in session:
+def index():
+    if 'user' not in session:
         return redirect('/')
-    current_user = session['email']
-    role = session['role']
     bookings = []
     for key in db.keys():
-        b = db[key]
-        if role == "admin" or b['user'] == current_user:
-            bookings.append(b)
-    return render_template('index.html', bookings=bookings, user=current_user)
+        bookings.append(db[key])
+    return render_template('index.html', bookings=bookings, user=session['user'])
 
 @app.route('/add', methods=['POST'])
 def add():
-    if 'email' not in session:
+    if 'user' not in session:
         return redirect('/')
-    user = session['email']
-    client = request.form['client']
-    currency = request.form['currency'].upper()
-    amount = float(request.form['amount'])
-    booking_rate = float(request.form['booking_rate'])
-    hedge_status = request.form['hedge_status']
-    booking_type = request.form['booking_type']
-    notes = request.form.get('notes', '')
-    date = datetime.now().strftime("%Y-%m-%d")
 
-    quote_currency = "USD" if currency != "USD" else "INR"
-    api_url = f"https://api.frankfurter.app/latest?from={currency}&to={quote_currency}"
+    client = request.form.get('client')
+    currency = request.form.get('currency')
+    amount = float(request.form.get('amount'))
+    booking_rate = float(request.form.get('booking_rate'))
+    hedge = request.form.get('hedge')
+    type_ = request.form.get('type')
+    notes = request.form.get('notes')
 
+    api_url = f"https://api.exchangerate.host/latest?base={currency}&symbols=INR"
     try:
         res = requests.get(api_url)
-        live_rate = res.json()['rates'][quote_currency]
+        live_rate = res.json()['rates']['INR']
     except Exception as e:
         print("API error:", e)
         return "Failed to fetch live rate"
 
     mtm = (live_rate - booking_rate) * amount
-    mtm_color = "green" if mtm >= 0 else "red"
 
-    record = {
-        "user": user,
+    data = {
         "client": client,
         "currency": currency,
         "amount": amount,
         "booking_rate": booking_rate,
         "live_rate": round(live_rate, 4),
         "mtm": round(mtm, 2),
-        "hedge_status": hedge_status,
-        "booking_type": booking_type,
+        "hedge": hedge,
+        "type": type_,
         "notes": notes,
-        "date": date,
-        "mtm_color": mtm_color,
-        "timestamp": datetime.now().isoformat()
+        "date": str(datetime.now().date())
     }
 
-    db[user + "_" + client + "_" + currency + "_" + date] = record
+    db[client + "_" + currency + "_" + str(datetime.now())] = data
     return redirect('/dashboard')
 
-@app.route('/download')
-def download_csv():
-    if 'email' not in session:
-        return redirect('/')
-    current_user = session['email']
-    role = session['role']
-    csv_data = "Client,Currency,Amount,Booking Rate,Live Rate,MTM,Hedge Status,Booking Type,Date,Notes\n"
-    for key in db.keys():
-        b = db[key]
-        if role == "admin" or b["user"] == current_user:
-            row = f"{b['client']},{b['currency']},{b['amount']},{b['booking_rate']},{b['live_rate']},{b['mtm']},{b['hedge_status']},{b['booking_type']},{b['date']},{b['notes']}"
-            csv_data += row + "\n"
-    return Response(csv_data, mimetype="text/csv",
-                    headers={"Content-disposition": "attachment; filename=bookings.csv"})
-
 @app.route('/reset')
-def reset_db():
-    if 'email' not in session or session['role'] != 'admin':
-        return redirect('/')
+def reset():
     for key in list(db.keys()):
         del db[key]
     return redirect('/dashboard')
 
-@app.route('/charts')
-def charts():
-    if 'email' not in session:
-        return redirect('/')
-    current_user = session['email']
-    role = session['role']
-    mtm_by_currency = {}
-    exposure_by_currency = {}
-    trend_map = defaultdict(float)
-
+@app.route('/download')
+def download():
+    from flask import Response
+    import csv
+    output = "Client,Currency,Amount,Booked Rate,Live Rate,MTM,Hedge,Type,Date,Notes\n"
     for key in db.keys():
         b = db[key]
-        if role == "admin" or b["user"] == current_user:
-            cur = b["currency"]
-            mtm_by_currency[cur] = mtm_by_currency.get(cur, 0) + b["mtm"]
-            exposure_by_currency[cur] = exposure_by_currency.get(cur, 0) + b["amount"]
-            trend_map[b["date"]] += b["mtm"]
+        row = f"{b['client']},{b['currency']},{b['amount']},{b['booking_rate']},{b['live_rate']},{b['mtm']},{b['hedge']},{b['type']},{b['date']},{b['notes']}"
+        output += row + "\n"
+    return Response(output, mimetype="text/csv", headers={"Content-Disposition": "attachment;filename=bookings.csv"})
 
-    mtm_trend = [{"date": d, "mtm": trend_map[d]} for d in sorted(trend_map)]
-    return render_template("charts.html",
-        mtm_by_currency=mtm_by_currency,
-        exposure_by_currency=exposure_by_currency,
-        mtm_trend=mtm_trend
-    )
+@app.route('/charts')
+def charts():
+    if 'user' not in session:
+        return redirect('/')
+    bookings = list(db.values())
+    return render_template('charts.html', bookings=bookings)
+
+@app.route('/logout')
+def logout():
+    session.pop('user', None)
+    return redirect('/')
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)
