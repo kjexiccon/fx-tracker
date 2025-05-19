@@ -51,7 +51,7 @@ def add_booking():
     hedge = request.form.get('hedge', 'Unhedged')
 
     # Fetch live rate
-    api_url = f"https://api.exchangerate.host/latest?base={currency}&symbols=INR"
+    api_url = f"https://api.exchangerate.host/latest?base={currency}&symbols={quote_currency}&access_key=0fbbd90aaaac4c74b20c657bbba88ab7"
     try:
         res = requests.get(api_url)
         live_rate = res.json()['rates']['INR']
