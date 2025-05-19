@@ -1,47 +1,71 @@
 from flask import Flask, render_template, request, redirect, session
-from datetime import datetime
 import requests
-from replit import db
+import json
+import os
+from datetime import date
 
 app = Flask(__name__)
-app.secret_key = 'your_secret_key'
+app.secret_key = 'your-secret-key'  # Required for session login
 
-@app.route('/', methods=['GET', 'POST'])
+DB_FILE = 'database.json'
+
+def load_db():
+    if os.path.exists(DB_FILE):
+        with open(DB_FILE, 'r') as f:
+            return json.load(f)
+    else:
+        return {}
+
+def save_db(data):
+    with open(DB_FILE, 'w') as f:
+        json.dump(data, f, indent=2)
+
+# --- Login Page ---
+@app.route('/')
 def login():
-    if request.method == 'POST':
-        email = request.form.get('email')
-        password = request.form.get('password')
-        if email == 'admin@example.com' and password == 'admin':
-            session['user'] = email
-            return redirect('/dashboard')
-        else:
-            return render_template('login.html', error='Invalid credentials')
     return render_template('login.html')
 
+@app.route('/login', methods=['POST'])
+def do_login():
+    email = request.form['email']
+    password = request.form['password']
+
+    if email == 'admin@example.com' and password == 'admin123':
+        session['user'] = email
+        return redirect('/dashboard')
+    else:
+        return render_template('login.html', error='Invalid credentials')
+
+@app.route('/logout')
+def logout():
+    session.pop('user', None)
+    return redirect('/')
+
+# --- Dashboard Page ---
 @app.route('/dashboard')
 def index():
     if 'user' not in session:
         return redirect('/')
-    bookings = []
-    for key in db.keys():
-        bookings.append(db[key])
+    db = load_db()
+    bookings = list(db.values())
     return render_template('index.html', bookings=bookings, user=session['user'])
 
+# --- Add Booking ---
 @app.route('/add', methods=['POST'])
 def add():
     if 'user' not in session:
         return redirect('/')
+    client = request.form['client']
+    currency = request.form['currency'].upper()
+    amount = float(request.form['amount'])
+    booking_rate = float(request.form['booking_rate'])
+    hedge_status = request.form['hedge']
+    trade_type = request.form['type']
+    notes = request.form.get('notes', '')
 
-    client = request.form.get('client')
-    currency = request.form.get('currency')
-    amount = float(request.form.get('amount'))
-    booking_rate = float(request.form.get('booking_rate'))
-    hedge = request.form.get('hedge')
-    type_ = request.form.get('type')
-    notes = request.form.get('notes')
-
-    api_url = f"https://api.exchangerate.host/latest?base={currency}&symbols=INR"
+    # Get live rate
     try:
+        api_url = f"https://api.exchangerate.host/latest?base={currency}&symbols=INR"
         res = requests.get(api_url)
         live_rate = res.json()['rates']['INR']
     except Exception as e:
@@ -49,6 +73,7 @@ def add():
         return "Failed to fetch live rate"
 
     mtm = (live_rate - booking_rate) * amount
+    db = load_db()
 
     data = {
         "client": client,
@@ -57,43 +82,40 @@ def add():
         "booking_rate": booking_rate,
         "live_rate": round(live_rate, 4),
         "mtm": round(mtm, 2),
-        "hedge": hedge,
-        "type": type_,
-        "notes": notes,
-        "date": str(datetime.now().date())
+        "hedge": hedge_status,
+        "type": trade_type,
+        "date": str(date.today()),
+        "notes": notes
     }
 
-    db[client + "_" + currency + "_" + str(datetime.now())] = data
+    key = client + "_" + currency + "_" + str(len(db) + 1)
+    db[key] = data
+    save_db(db)
     return redirect('/dashboard')
 
+# --- Reset DB (Optional utility) ---
 @app.route('/reset')
-def reset():
-    for key in list(db.keys()):
-        del db[key]
+def reset_db():
+    save_db({})
     return redirect('/dashboard')
 
+# --- Download CSV ---
 @app.route('/download')
 def download():
-    from flask import Response
     import csv
-    output = "Client,Currency,Amount,Booked Rate,Live Rate,MTM,Hedge,Type,Date,Notes\n"
-    for key in db.keys():
-        b = db[key]
-        row = f"{b['client']},{b['currency']},{b['amount']},{b['booking_rate']},{b['live_rate']},{b['mtm']},{b['hedge']},{b['type']},{b['date']},{b['notes']}"
-        output += row + "\n"
-    return Response(output, mimetype="text/csv", headers={"Content-Disposition": "attachment;filename=bookings.csv"})
-
-@app.route('/charts')
-def charts():
-    if 'user' not in session:
-        return redirect('/')
+    from flask import Response
+    db = load_db()
     bookings = list(db.values())
-    return render_template('charts.html', bookings=bookings)
 
-@app.route('/logout')
-def logout():
-    session.pop('user', None)
-    return redirect('/')
+    def generate():
+        data = bookings
+        header = data[0].keys() if data else []
+        yield ','.join(header) + '\n'
+        for row in data:
+            yield ','.join(str(row[h]) for h in header) + '\n'
+
+    return Response(generate(), mimetype='text/csv',
+                    headers={'Content-Disposition': 'attachment; filename=fx_bookings.csv'})
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)
