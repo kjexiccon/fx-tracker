@@ -1,34 +1,46 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>FX Charts</title>
+    <title>FX Tracker Charts</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-    <h2>MTM by Currency</h2>
-    <canvas id="mtmChart" width="600" height="300"></canvas>
+<div class="container">
+    <h2>Booking MTM Overview</h2>
+    <canvas id="mtmChart" height="100"></canvas>
+    <a href="/dashboard"><button class="btn">← Back to Dashboard</button></a>
+</div>
 
-    <script>
-        const data = {
-            labels: {{ labels | tojson }},
+<script>
+    const data = {{ data|tojson }};
+    const labels = data.map(row => row.notes || row.client + '-' + row.currency);
+    const mtmData = data.map(row => row.mtm);
+
+    const ctx = document.getElementById('mtmChart').getContext('2d');
+    new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: labels,
             datasets: [{
-                label: 'MTM Value',
-                data: {{ values | tojson }},
-                backgroundColor: 'rgba(54, 162, 235, 0.5)',
-                borderColor: 'rgba(54, 162, 235, 1)',
-                borderWidth: 1
+                label: 'MTM per Booking',
+                data: mtmData,
+                borderWidth: 1,
+                backgroundColor: mtmData.map(v => v < 0 ? 'rgba(255,99,132,0.7)' : 'rgba(75,192,192,0.7)')
             }]
-        };
-
-        new Chart(document.getElementById('mtmChart'), {
-            type: 'bar',
-            data: data,
-            options: {
-                scales: {
-                    y: { beginAtZero: true }
+        },
+        options: {
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    title: { display: true, text: 'MTM Value (INR)' }
+                },
+                x: {
+                    title: { display: true, text: 'Bookings' }
                 }
             }
-        });
-    </script>
+        }
+    });
+</script>
 </body>
 </html>
