@@ -1,5 +1,4 @@
-from flask import Flask, render_template, request, redirect, session
-from flask import send_file
+from flask import Flask, render_template, request, redirect, session, send_file
 from datetime import datetime
 from io import StringIO
 import csv
@@ -9,7 +8,7 @@ app = Flask(__name__)
 app.secret_key = "secure-key"
 db = {}
 
-# Static login for simplicity
+# Hardcoded login credentials
 users = {"admin@example.com": "admin123"}
 
 @app.route("/", methods=["GET", "POST"])
@@ -35,7 +34,7 @@ def dashboard():
 def add():
     if "user" not in session:
         return redirect("/")
-    
+
     try:
         client = request.form["client"]
         currency = request.form["currency"].upper()
@@ -46,22 +45,20 @@ def add():
         notes = request.form["notes"]
         date = datetime.now().strftime("%Y-%m-%d")
 
-        # Fetch live FX rate from exchangerate.host
-        fx_url = f"https://api.exchangerate.host/latest?base={currency}&symbols=USD"
-        response = requests.get(fx_url)
+        # Free API without key
+        response = requests.get(f"https://api.exchangerate.host/latest?base={currency}&symbols=USD")
         data = response.json()
-
         if not data.get("success", True):
             return "Failed to fetch live rate"
-
         live_rate = data["rates"]["USD"]
+
         mtm = round((live_rate - booked_rate) * amount, 2)
 
         entry = {
             "client": client,
             "currency": currency,
             "amount": amount,
-            "booked_rate": booked_rate,
+            "booking_rate": booked_rate,
             "live_rate": live_rate,
             "mtm": mtm,
             "hedge": hedge,
@@ -75,6 +72,20 @@ def add():
 
     except Exception as e:
         return f"Error: {str(e)}"
+
+@app.route("/charts")
+def charts():
+    if "user" not in session:
+        return redirect("/")
+    bookings = list(db.values())
+    currency_mtm = {}
+    for entry in bookings:
+        currency = entry["currency"]
+        currency_mtm[currency] = currency_mtm.get(currency, 0) + entry["mtm"]
+
+    labels = list(currency_mtm.keys())
+    values = list(currency_mtm.values())
+    return render_template("charts.html", labels=labels, values=values)
 
 @app.route("/logout")
 def logout():
@@ -96,7 +107,7 @@ def download():
             entry["client"],
             entry["currency"],
             entry["amount"],
-            entry["booked_rate"],
+            entry["booking_rate"],
             entry["live_rate"],
             entry["mtm"],
             entry["hedge"],
