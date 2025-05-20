@@ -1,15 +1,23 @@
+
 <!DOCTYPE html>
 <html>
 <head>
-    <title>FX MTM Chart</title>
+    <title>FX Tracker Charts</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-    <h2 style="text-align:center;">MTM by Currency</h2>
-    <canvas id="mtmChart" width="800" height="400" style="display: block; margin: auto;"></canvas>
+    <div class="container">
+        <h2>MTM by Currency</h2>
+        <div class="chart-wrapper">
+            <canvas id="mtmChart"></canvas>
+        </div>
+        <a href="/dashboard"><button>← Back to Dashboard</button></a>
+    </div>
     <script>
         const ctx = document.getElementById('mtmChart').getContext('2d');
-        const mtmChart = new Chart(ctx, {
+        const chart = new Chart(ctx, {
             type: 'bar',
             data: {
                 labels: {{ labels|tojson }},
@@ -18,6 +26,14 @@
                     data: {{ values|tojson }},
                     backgroundColor: 'rgba(0, 123, 255, 0.6)'
                 }]
+            },
+            options: {
+                responsive: true,
+                scales: {
+                    y: {
+                        beginAtZero: true
+                    }
+                }
             }
         });
     </script>
