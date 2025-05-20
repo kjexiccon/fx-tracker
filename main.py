@@ -1,122 +1,97 @@
 from flask import Flask, render_template, request, redirect, session, send_file
-from datetime import datetime
-from io import StringIO
 import csv
+import os
+from datetime import datetime
 import requests
 
 app = Flask(__name__)
-app.secret_key = "secure-key"
-db = {}
+app.secret_key = 'your_secret_key'
 
-# Hardcoded login credentials
-users = {"admin@example.com": "admin123"}
+DB = []
 
-@app.route("/", methods=["GET", "POST"])
-def login():
-    if request.method == "POST":
-        email = request.form["email"]
-        password = request.form["password"]
-        if email in users and users[email] == password:
-            session["user"] = email
-            return redirect("/dashboard")
-        else:
-            return render_template("login.html", error="Invalid credentials")
-    return render_template("login.html")
-
-@app.route("/dashboard")
-def dashboard():
-    if "user" not in session:
-        return redirect("/")
-    bookings = list(db.values())
-    return render_template("index.html", bookings=bookings, user=session["user"])
-
-@app.route("/add", methods=["POST"])
-def add():
-    if "user" not in session:
-        return redirect("/")
-
+def get_live_rate(currency):
     try:
-        client = request.form["client"]
-        currency = request.form["currency"].upper()
-        amount = float(request.form["amount"])
-        booked_rate = float(request.form["booking_rate"])
-        hedge = request.form["hedge"]
-        tx_type = request.form["type"]
-        notes = request.form["notes"]
-        date = datetime.now().strftime("%Y-%m-%d")
-
-        # Free API without key
-        response = requests.get(f"https://api.exchangerate.host/latest?base={currency}&symbols=USD")
+        response = requests.get(f"https://api.exchangerate.host/latest?base={currency}&symbols=INR")
         data = response.json()
-        if not data.get("success", True):
+        return data["rates"]["INR"]
+    except Exception as e:
+        print("Live rate fetch failed:", e)
+        return None
+
+@app.route('/')
+def login():
+    return render_template('login.html')
+
+@app.route('/login', methods=['POST'])
+def do_login():
+    email = request.form['email']
+    password = request.form['password']
+    if email == 'admin@example.com' and password == 'admin123':
+        session['user'] = email
+        return redirect('/dashboard')
+    return render_template('login.html', error="Invalid credentials")
+
+@app.route('/dashboard')
+def dashboard():
+    if 'user' not in session:
+        return redirect('/')
+    return render_template('index.html', data=DB)
+
+@app.route('/add', methods=['POST'])
+def add_booking():
+    if 'user' not in session:
+        return redirect('/')
+    try:
+        client = request.form['client']
+        currency = request.form['currency']
+        amount = float(request.form['amount'])
+        booked_rate = float(request.form['booked_rate'])
+        hedge = request.form['hedge']
+        trade_type = request.form['type']
+        notes = request.form['notes']
+        live_rate = get_live_rate(currency)
+        if not live_rate:
             return "Failed to fetch live rate"
-        live_rate = data["rates"]["USD"]
 
         mtm = round((live_rate - booked_rate) * amount, 2)
-
-        entry = {
+        DB.append({
             "client": client,
             "currency": currency,
             "amount": amount,
-            "booking_rate": booked_rate,
+            "booked_rate": booked_rate,
             "live_rate": live_rate,
             "mtm": mtm,
             "hedge": hedge,
-            "type": tx_type,
-            "date": date,
+            "type": trade_type,
+            "date": datetime.today().strftime('%Y-%m-%d'),
             "notes": notes
-        }
-
-        db[len(db)] = entry
-        return redirect("/dashboard")
-
+        })
+        return redirect('/dashboard')
     except Exception as e:
-        return f"Error: {str(e)}"
+        return f"Internal Server Error: {e}"
 
-@app.route("/charts")
+@app.route('/charts')
 def charts():
-    if "user" not in session:
-        return redirect("/")
-    bookings = list(db.values())
-    currency_mtm = {}
-    for entry in bookings:
-        currency = entry["currency"]
-        currency_mtm[currency] = currency_mtm.get(currency, 0) + entry["mtm"]
+    if 'user' not in session:
+        return redirect('/')
+    return render_template('charts.html', data=DB)
 
-    labels = list(currency_mtm.keys())
-    values = list(currency_mtm.values())
-    return render_template("charts.html", labels=labels, values=values)
-
-@app.route("/logout")
-def logout():
-    session.pop("user", None)
-    return redirect("/")
-
-@app.route("/reset")
+@app.route('/reset')
 def reset():
-    db.clear()
-    return redirect("/dashboard")
+    DB.clear()
+    return redirect('/dashboard')
 
-@app.route("/download")
+@app.route('/download')
 def download():
-    si = StringIO()
-    cw = csv.writer(si)
-    cw.writerow(["Client", "Currency", "Amount", "Booked Rate", "Live Rate", "MTM", "Hedge", "Type", "Date", "Notes"])
-    for entry in db.values():
-        cw.writerow([
-            entry["client"],
-            entry["currency"],
-            entry["amount"],
-            entry["booking_rate"],
-            entry["live_rate"],
-            entry["mtm"],
-            entry["hedge"],
-            entry["type"],
-            entry["date"],
-            entry["notes"]
-        ])
-    si.seek(0)
-    return send_file(StringIO(si.getvalue()), mimetype="text/csv", download_name="bookings.csv", as_attachment=True)
+    filename = "bookings.csv"
+    keys = ["client", "currency", "amount", "booked_rate", "live_rate", "mtm", "hedge", "type", "date", "notes"]
+    with open(filename, 'w', newline='') as f:
+        writer = csv.DictWriter(f, fieldnames=keys)
+        writer.writeheader()
+        writer.writerows(DB)
+    return send_file(filename, as_attachment=True)
 
-if __name__ == "__main__":
-    app.run(debug=True)
+@app.route('/logout')
+def logout():
+    session.pop('user', None)
+    return redirect('/')
