@@ -1,108 +1,71 @@
-/* General layout */
+
 body {
     font-family: Arial, sans-serif;
-    background: #f0f2f5;
     margin: 0;
-    padding: 20px;
-    color: #333;
+    background: #f2f2f2;
 }
-
-.container {
-    max-width: 1000px;
-    margin: auto;
-    background: #fff;
+.login-container {
+    max-width: 400px;
+    margin: 100px auto;
+    background: white;
     padding: 30px;
     border-radius: 10px;
-    box-shadow: 0 0 12px rgba(0,0,0,0.1);
+    box-shadow: 0 0 10px rgba(0,0,0,0.1);
 }
-
-/* Headings */
-h1, h2, h3 {
-    text-align: center;
-    color: #007bff;
-}
-
-/* Form styling */
 form {
     display: flex;
-    flex-wrap: wrap;
-    gap: 10px;
-    justify-content: center;
-    margin: 20px 0;
+    flex-direction: column;
 }
-
-input, select {
+input, select, button {
     padding: 10px;
-    border: 1px solid #ccc;
-    border-radius: 5px;
-    flex: 1;
-    min-width: 150px;
+    margin: 10px 0;
+    font-size: 1em;
 }
-
 button {
-    padding: 10px 20px;
-    background-color: #007bff;
+    background: #007bff;
     color: white;
-    font-weight: bold;
     border: none;
-    border-radius: 5px;
     cursor: pointer;
 }
-
 button:hover {
-    background-color: #0056b3;
+    background: #0056b3;
 }
-
-button.danger {
-    background-color: #dc3545;
+.error {
+    color: red;
+    font-size: 0.9em;
+    text-align: center;
 }
-
-button.warning {
-    background-color: #f0ad4e;
+.container {
+    max-width: 1000px;
+    margin: 30px auto;
+    padding: 20px;
+    background: white;
+    border-radius: 8px;
 }
-
-button + button {
-    margin-left: 10px;
-}
-
-/* Tables */
 table {
     width: 100%;
     border-collapse: collapse;
-    margin-top: 30px;
-    background-color: white;
+    margin-top: 20px;
 }
-
 th, td {
     padding: 10px;
+    border: 1px solid #ccc;
     text-align: center;
-    border: 1px solid #ddd;
 }
-
 th {
-    background-color: #007bff;
+    background: #007bff;
     color: white;
 }
-
-/* Login box */
-.login-container {
-    width: 350px;
-    margin: 100px auto;
-    padding: 30px;
-    background: #ffffff;
-    box-shadow: 0 0 10px rgba(0,0,0,0.1);
-    border-radius: 8px;
+.chart-wrapper {
+    max-width: 900px;
+    margin: 40px auto;
 }
-
-.error {
-    color: red;
-    margin-top: 10px;
-    text-align: center;
-}
-
-/* Chart */
-canvas {
-    max-width: 800px;
-    display: block;
-    margin: auto;
+@media (max-width: 768px) {
+    .container, .login-container {
+        margin: 10px;
+        width: auto;
+    }
+    table {
+        font-size: 0.9em;
+    }
 }
