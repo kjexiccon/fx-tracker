@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>FX MTM Chart</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <h2 style="text-align:center;">MTM by Currency</h2>
+    <canvas id="mtmChart" width="800" height="400" style="display: block; margin: auto;"></canvas>
+    <script>
+        const ctx = document.getElementById('mtmChart').getContext('2d');
+        const mtmChart = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: {{ labels|tojson }},
+                datasets: [{
+                    label: 'MTM',
+                    data: {{ values|tojson }},
+                    backgroundColor: 'rgba(0, 123, 255, 0.6)'
+                }]
+            }
+        });
+    </script>
+</body>
+</html>
