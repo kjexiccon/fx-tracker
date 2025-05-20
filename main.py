@@ -1,111 +1,146 @@
-from flask import Flask, render_template, request, redirect, session, url_for
+from flask import Flask, render_template, request, redirect, url_for, session
 import requests
-import csv
+import sqlite3
 from datetime import datetime
+import csv
+from io import StringIO
+from flask import make_response
 
 app = Flask(__name__)
 app.secret_key = 'your_secret_key'
-data = []
 
-# Free API (no key needed)
-def fetch_live_rate(base, symbol):
-    try:
-        url = f"https://api.exchangerate.host/latest?base={base}&symbols={symbol}"
-        res = requests.get(url)
-        return res.json()['rates'][symbol]
-    except Exception as e:
-        print("API error:", e)
-        return None
+# ----------------- Database Setup -----------------
+def init_db():
+    conn = sqlite3.connect('fx_tracker.db')
+    c = conn.cursor()
+    c.execute('''CREATE TABLE IF NOT EXISTS bookings (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    client TEXT,
+                    currency TEXT,
+                    amount REAL,
+                    booked_rate REAL,
+                    live_rate REAL,
+                    mtm REAL,
+                    hedge TEXT,
+                    type TEXT,
+                    date TEXT,
+                    notes TEXT
+                )''')
+    conn.commit()
+    conn.close()
+
+init_db()
+
+# ----------------- Helper: Get Live Rate -----------------
+def get_live_rate(base_currency, target_currency):
+    url = f"https://api.exchangerate.host/latest?base={base_currency}&symbols={target_currency}"
+    response = requests.get(url)
+    if response.status_code == 200:
+        data = response.json()
+        return data['rates'].get(target_currency)
+    return None
+
+# ----------------- Routes -----------------
 
 @app.route('/')
-def login():
-    return render_template('login.html')
+def home():
+    return redirect(url_for('login'))
 
-@app.route('/login', methods=['POST'])
-def do_login():
-    email = request.form['email']
-    password = request.form['password']
-    if email == 'admin@example.com' and password == 'admin123':
-        session['user'] = email
-        return redirect('/dashboard')
-    return render_template('login.html', error="Invalid credentials")
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if request.method == 'POST':
+        if request.form['email'] == 'admin@example.com' and request.form['password'] == 'password':
+            session['user'] = request.form['email']
+            return redirect(url_for('dashboard'))
+        else:
+            return render_template('login.html', error="Invalid credentials")
+    return render_template('login.html')
 
 @app.route('/logout')
 def logout():
     session.pop('user', None)
-    return redirect('/')
+    return redirect(url_for('login'))
 
 @app.route('/dashboard')
 def dashboard():
     if 'user' not in session:
-        return redirect('/')
-    return render_template('index.html', data=data)
+        return redirect(url_for('login'))
+    conn = sqlite3.connect('fx_tracker.db')
+    c = conn.cursor()
+    c.execute("SELECT * FROM bookings")
+    bookings = c.fetchall()
+    conn.close()
+    return render_template('index.html', bookings=bookings)
 
 @app.route('/add', methods=['POST'])
-def add():
+def add_booking():
     if 'user' not in session:
-        return redirect('/')
+        return redirect(url_for('login'))
 
-    try:
-        client = request.form['client']
-        currency = request.form['currency']
-        amount = float(request.form['amount'])
-        booked_rate = float(request.form['booked_rate'])
-        hedge_status = request.form['hedge_status']
-        trade_type = request.form['type']
-        notes = request.form['notes']
-        date = datetime.now().strftime('%Y-%m-%d')
+    client = request.form['client']
+    currency = request.form['currency']
+    amount = float(request.form['amount'])
+    booked_rate = float(request.form['booked_rate'])
+    hedge = request.form['hedge']
+    fx_type = request.form['type']
+    notes = request.form['notes']
 
-        live_rate = fetch_live_rate(currency, 'INR')
-        if live_rate is None:
-            return "Failed to fetch live rate"
+    base_currency = currency
+    target_currency = 'USD' if currency != 'USD' else 'EUR'
+    live_rate = get_live_rate(base_currency, target_currency)
+    if live_rate is None:
+        return "Failed to fetch live rate"
 
-        mtm = round((live_rate - booked_rate) * amount, 2)
-        if hedge_status == "Hedged":
-            mtm = -abs(mtm)
+    mtm = round((live_rate - booked_rate) * amount, 2)
+    today = datetime.today().strftime('%Y-%m-%d')
 
-        data.append({
-            'client': client,
-            'currency': currency,
-            'amount': amount,
-            'booked_rate': booked_rate,
-            'live_rate': live_rate,
-            'mtm': mtm,
-            'hedge': hedge_status,
-            'type': trade_type,
-            'date': date,
-            'notes': notes
-        })
-        return redirect('/dashboard')
-
-    except Exception as e:
-        print("Add Error:", e)
-        return "Internal Error Occurred"
+    conn = sqlite3.connect('fx_tracker.db')
+    c = conn.cursor()
+    c.execute("INSERT INTO bookings (client, currency, amount, booked_rate, live_rate, mtm, hedge, type, date, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+              (client, currency, amount, booked_rate, live_rate, mtm, hedge, fx_type, today, notes))
+    conn.commit()
+    conn.close()
+    return redirect(url_for('dashboard'))
 
 @app.route('/reset')
 def reset():
-    if 'user' not in session:
-        return redirect('/')
-    data.clear()
-    return redirect('/dashboard')
+    conn = sqlite3.connect('fx_tracker.db')
+    c = conn.cursor()
+    c.execute("DELETE FROM bookings")
+    conn.commit()
+    conn.close()
+    return redirect(url_for('dashboard'))
 
 @app.route('/download')
 def download():
-    if 'user' not in session:
-        return redirect('/')
-    output = [['Client', 'Currency', 'Amount', 'Booked Rate', 'Live Rate', 'MTM', 'Hedge', 'Type', 'Date', 'Notes']]
-    for row in data:
-        output.append([row[k] for k in output[0]])
-    with open('bookings.csv', 'w', newline='') as f:
-        writer = csv.writer(f)
-        writer.writerows(output)
-    return redirect('/dashboard')
+    conn = sqlite3.connect('fx_tracker.db')
+    c = conn.cursor()
+    c.execute("SELECT * FROM bookings")
+    bookings = c.fetchall()
+    conn.close()
+
+    si = StringIO()
+    cw = csv.writer(si)
+    cw.writerow(['Client', 'Currency', 'Amount', 'Booked Rate', 'Live Rate', 'MTM', 'Hedge', 'Type', 'Date', 'Notes'])
+    for b in bookings:
+        cw.writerow(b[1:])
+    output = make_response(si.getvalue())
+    output.headers["Content-Disposition"] = "attachment; filename=bookings.csv"
+    output.headers["Content-type"] = "text/csv"
+    return output
 
 @app.route('/charts')
 def charts():
     if 'user' not in session:
-        return redirect('/')
-    return render_template('charts.html', data=data)
+        return redirect(url_for('login'))
+    conn = sqlite3.connect('fx_tracker.db')
+    c = conn.cursor()
+    c.execute("SELECT currency, SUM(mtm) FROM bookings GROUP BY currency")
+    data = c.fetchall()
+    conn.close()
+    labels = [row[0] for row in data]
+    values = [row[1] for row in data]
+    return render_template('charts.html', labels=labels, values=values)
 
 if __name__ == '__main__':
     app.run(debug=True)
