@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>FX Tracker Dashboard</title>
+    <style>
+        body { font-family: Arial; background: #f5f5f5; }
+        h2, h3 { text-align: center; }
+        form, table { margin: auto; margin-top: 20px; width: 90%; max-width: 1000px; }
+        input, select, button {
+            padding: 10px;
+            margin: 5px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        table { width: 100%; border-collapse: collapse; background: white; margin-top: 30px; }
+        th, td {
+            padding: 10px;
+            text-align: center;
+            border-bottom: 1px solid #ccc;
+        }
+        th { background: #007bff; color: white; }
+        a.button {
+            display: inline-block;
+            margin: 10px;
+            padding: 10px;
+            background: #007bff;
+            color: white;
+            text-decoration: none;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body>
+    <h2>Welcome, {{ session['user'] }}</h2>
+    <div style="text-align: center;">
+        <a class="button" href="/logout">Logout</a>
+        <a class="button" href="/download">Download CSV</a>
+        <a class="button" href="/reset">Reset DB</a>
+        <a class="button" href="/charts">View Charts</a>
+    </div>
+    <h3>Add New Booking</h3>
+    <form method="POST" action="/add">
+        <input name="client" placeholder="Client" required>
+        <input name="currency" placeholder="Currency (e.g. EUR)" required>
+        <input name="amount" type="number" placeholder="Amount" step="any" required>
+        <input name="booked_rate" type="number" placeholder="Booked Rate" step="any" required>
+        <select name="hedge">
+            <option value="Hedged">Hedged</option>
+            <option value="Unhedged">Unhedged</option>
+        </select>
+        <select name="type">
+            <option value="Export">Export</option>
+            <option value="Import">Import</option>
+        </select>
+        <input name="notes" placeholder="Notes">
+        <button type="submit">Add Booking</button>
+    </form>
+    <h3>All Bookings</h3>
+    <table>
+        <tr>
+            <th>Client</th><th>Currency</th><th>Amount</th><th>Booked Rate</th><th>Live Rate</th><th>MTM</th>
+            <th>Hedge</th><th>Type</th><th>Date</th><th>Notes</th>
+        </tr>
+        {% for b in bookings %}
+        <tr>
+            <td>{{ b[1] }}</td><td>{{ b[2] }}</td><td>{{ b[3] }}</td><td>{{ b[4] }}</td>
+            <td>{{ b[5] }}</td><td>{{ b[6] }}</td><td>{{ b[7] }}</td><td>{{ b[8] }}</td>
+            <td>{{ b[9] }}</td><td>{{ b[10] }}</td>
+        </tr>
+        {% endfor %}
+    </table>
+</body>
+</html>
